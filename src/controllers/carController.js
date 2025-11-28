@@ -43,14 +43,12 @@ exports.getYears = async (req, res) => {
 
 exports.getCarDetails = async (req, res) => {
   const { brandCode, modelCode, yearCode } = req.params;
-  const { search } = req.query;
 
   try {
     const data = await carAggregatorService.getCarDetails({
       brandCode,
       modelCode,
       yearCode,
-      searchText: search
     });
 
     res.json(data);
@@ -65,4 +63,3 @@ exports.getCarDetails = async (req, res) => {
     res.status(500).json({ error: 'Erro ao buscar detalhes do veículo' });
   }
 };
-
