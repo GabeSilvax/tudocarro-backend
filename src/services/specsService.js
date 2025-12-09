@@ -1,99 +1,97 @@
-// specsService.js
-const axios = require('axios');
+// src/services/specsService.js
+const { searchFromApiNinjas } = require('./specProviders/apiNinjasProvider');
+const { searchFromCarQuery } = require('./specProviders/carQueryProvider');
+const { searchFromVpic } = require('./specProviders/vpicProvider');
 
-const CAR_SPECS_API_KEY = process.env.CAR_SPECS_API_KEY;
-console.log('[SPECS] API KEY carregada?', !!CAR_SPECS_API_KEY);
+// se quiser 100% públicas, é só tirar o searchFromApiNinjas daqui:
+const PROVIDERS = [
+  searchFromApiNinjas, // precisa de key
+  searchFromCarQuery,  // público
+  searchFromVpic,      // público
+];
 
-async function searchCarSpecs({ brand, model, year }) {
-  if (!CAR_SPECS_API_KEY) {
-    console.warn('CAR_SPECS_API_KEY não configurada. Specs desativado.');
-    return null;
-  }
+const FIELDS = [
+  'engine',
+  'displacement',
+  'horsepower',
+  'torque',
+  'fuel_type',
+  'transmission',
+  'drive',
+  'body_style',
+  'cylinders',
+  'city_mpg',
+  'highway_mpg',
+];
 
-  const baseConfig = {
-    headers: {
-      'X-Api-Key': CAR_SPECS_API_KEY,
-    },
-    timeout: 8000,
+function mergeSpecs(specsList) {
+  const final = {
+    make: null,
+    model: null,
+    year: null,
+    _sources: [],
   };
 
-  try {
-    // 1ª tentativa: com ano
-    const paramsWithYear = {
-      make: brand,
-      model: model,
-      year: year,
-    };
+  for (const specs of specsList) {
+    if (!specs) continue;
 
-    console.log('[SPECS] Tentando com ano:', paramsWithYear);
+    final.make = final.make || specs.make;
+    final.model = final.model || specs.model;
+    final.year = final.year || specs.year;
 
-    let response = await axios.get('https://api.api-ninjas.com/v1/cars', {
-      ...baseConfig,
-      params: paramsWithYear,
-    });
+    if (specs._source) final._sources.push(specs._source);
 
-    let data = response.data;
-    console.log('[SPECS] Resultado com ano, itens:', data?.length || 0);
-
-    // Se não achou nada, tenta sem ano
-    if (!data || data.length === 0) {
-      const paramsWithoutYear = {
-        make: brand,
-        model: model,
-      };
-
-      console.log('[SPECS] Nada com ano, tentando sem ano:', paramsWithoutYear);
-
-      response = await axios.get('https://api.api-ninjas.com/v1/cars', {
-        ...baseConfig,
-        params: paramsWithoutYear,
-      });
-
-      data = response.data;
-      console.log('[SPECS] Resultado sem ano, itens:', data?.length || 0);
-
-      if (!data || data.length === 0) {
-        return null;
+    for (const field of FIELDS) {
+      if (final[field] == null && specs[field] != null) {
+        final[field] = specs[field];
       }
+    }
+  }
 
-      // Se mandou ano, tenta achar um objeto com o mesmo ano
-      if (year) {
-        const match = data.find(
-          (c) => Number(c.year) === Number(year)
-        );
-        if (match) {
-          data = [match];
+  return final;
+}
+
+function completionRate(specs) {
+  const total = FIELDS.length;
+  if (total === 0) return 0;
+  const filled = FIELDS.filter((f) => specs[f] != null).length;
+  return filled / total;
+}
+
+async function searchCarSpecs({ brand, model, year }) {
+  const partialResults = [];
+
+  for (const provider of PROVIDERS) {
+    try {
+      const result = await provider({ brand, model, year });
+      if (result) {
+        partialResults.push(result);
+
+        const merged = mergeSpecs(partialResults);
+        const rate = completionRate(merged);
+        console.log('[SPECS] Provider ok:', result._source, 'completion', rate);
+
+        if (rate >= 0.9) {
+          return { ...merged, completionRate: rate };
         }
       }
+    } catch (e) {
+      console.error('[SPECS] Erro em provider:', e.message);
     }
+  }
 
-    // Nesse ponto, data[0] é o carro escolhido
-    const car = data[0];
-
-    return {
-      make: car.make,
-      model: car.model,
-      year: car.year,
-      fuel_type: car.fuel_type,
-      transmission: car.transmission,
-      engine: car.engine,
-      displacement: car.displacement,
-      cylinders: car.cylinders,
-      drive: car.drive,
-      body_style: car.class,
-      city_mpg: car.city_mpg,
-      highway_mpg: car.highway_mpg,
-    };
-  } catch (error) {
-    console.error('Erro ao buscar especificações na API externa:', error.message);
-
-    if (error.response) {
-      console.error('Status API Ninjas:', error.response.status);
-      console.error('Body API Ninjas:', error.response.data);
-    }
-
+  if (partialResults.length === 0) {
+    console.log('[SPECS] Nenhum provider retornou dados');
     return null;
   }
+
+  const merged = mergeSpecs(partialResults);
+  const rate = completionRate(merged);
+  console.log('[SPECS] Resultado final completion:', rate);
+
+  if (rate < 0.1) return null;
+
+  return { ...merged, completionRate: rate };
 }
 
 module.exports = {

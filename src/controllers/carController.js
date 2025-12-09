@@ -1,3 +1,4 @@
+// src/controllers/carController.js
 const fipeService = require('../services/fipeService');
 const carAggregatorService = require('../services/carAggregatorService');
 
@@ -25,6 +26,12 @@ exports.getModels = async (req, res) => {
     res.json(models);
   } catch (error) {
     console.error('Erro getModels:', error.message);
+
+    if (error.response) {
+      console.error('Status FIPE:', error.response.status);
+      console.error('Dados FIPE:', error.response.data);
+    }
+
     res.status(500).json({ error: 'Erro ao buscar modelos' });
   }
 };
@@ -37,6 +44,12 @@ exports.getYears = async (req, res) => {
     res.json(years);
   } catch (error) {
     console.error('Erro getYears:', error.message);
+
+    if (error.response) {
+      console.error('Status FIPE:', error.response.status);
+      console.error('Dados FIPE:', error.response.data);
+    }
+
     res.status(500).json({ error: 'Erro ao buscar anos' });
   }
 };
